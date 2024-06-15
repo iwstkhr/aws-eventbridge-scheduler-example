@@ -1,0 +1,82 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: EC2 scheduler
+
+Parameters:
+  Prefix:
+    Type: String
+    Default: ec2-scheduler
+  InstanceIds:
+    Type: String
+    Description: '"i-1234567890abcdefg", "..."'
+  ScheduleStartExpression:
+    Type: String
+    Default: 'cron(0 7 * * ? *)'
+  ScheduleStopExpression:
+    Type: String
+    Default: 'cron(0 22 * * ? *)'
+  ScheduleTimezone:
+    Type: String
+    Description: IANA timezone identifier. For the full list, refer to https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
+    Default: UTC
+    AllowedValues:
+      - UTC
+      - Japan
+
+Resources:
+  ScheduleStart:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: !Sub ${Prefix}-schedule-start
+      ScheduleExpression: !Ref ScheduleStartExpression
+      ScheduleExpressionTimezone: !Ref ScheduleTimezone
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      State: ENABLED
+      Target:
+        Arn: arn:aws:scheduler:::aws-sdk:ec2:startInstances
+        Input: !Sub |-
+          {
+            "InstanceIds": [${InstanceIds}]
+          }
+        RoleArn: !GetAtt Role.Arn
+
+  ScheduleStop:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: !Sub ${Prefix}-schedule-stop
+      ScheduleExpression: !Ref ScheduleStopExpression
+      ScheduleExpressionTimezone: !Ref ScheduleTimezone
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      State: ENABLED
+      Target:
+        Arn: arn:aws:scheduler:::aws-sdk:ec2:stopInstances
+        Input: !Sub |-
+          {
+            "InstanceIds": [${InstanceIds}]
+          }
+        RoleArn: !GetAtt Role.Arn
+
+  Role:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${Prefix}-role
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - scheduler.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: ec2
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:StartInstances
+                  - ec2:StopInstances
+                Resource: !Sub arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:instance/i-*
